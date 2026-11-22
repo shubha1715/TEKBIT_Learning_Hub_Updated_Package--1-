@@ -1019,6 +1019,9 @@
             </p>
 
             <form id="contact-enquiry-form" onsubmit="handleContactEnquirySubmit(event)" class="space-y-5">
+              <!-- Honeypot field for spam bots (hidden from real users) -->
+              <input type="checkbox" id="enquiry-botcheck" tabindex="-1" autocomplete="off" style="position:absolute;left:-9999px;opacity:0;" aria-hidden="true" />
+
               <div class="grid grid-cols-1 sm:grid-cols-2 gap-5">
                 <div>
                   <label for="enquiry-name" class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
@@ -1217,6 +1220,9 @@
         </div>
 
         <form id="prebook-form" onsubmit="handlePreBookSubmit(event)" class="p-6 sm:p-7 space-y-4">
+          <!-- Honeypot field for spam bots (hidden from real users) -->
+          <input type="checkbox" id="pb-botcheck" tabindex="-1" autocomplete="off" style="position:absolute;left:-9999px;opacity:0;" aria-hidden="true" />
+
           <div>
             <label for="prebook-program" class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
               Select Program *
@@ -1545,6 +1551,22 @@
       }
     ];
 
+    // =====================================================================
+    // EMAIL INTEGRATION (Web3Forms) — enquiries are sent to tekbitlearn@gmail.com
+    // =====================================================================
+    const WEB3FORMS_KEY = '39e45f24-a19d-485a-8052-749b3836d93f';
+
+    async function sendToEmail(payload) {
+      const res = await fetch('https://api.web3forms.com/submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        body: JSON.stringify({ access_key: WEB3FORMS_KEY, from_name: 'TEKBIT Website', ...payload })
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.message || 'Submission failed');
+      return data;
+    }
+
     function formatINR(num) {
       return '₹' + num.toLocaleString('en-IN');
     }
@@ -1715,17 +1737,52 @@
       }
     }
 
-    function handleContactEnquirySubmit(event) {
+    // ---- Enquiry form: sends submission to your email via Web3Forms ----
+    async function handleContactEnquirySubmit(event) {
       event.preventDefault();
+      const form = document.getElementById('contact-enquiry-form');
+      const btn = form.querySelector('button[type="submit"]');
+
+      // Spam trap: real users never tick this hidden box
+      if (document.getElementById('enquiry-botcheck').checked) return;
+
       const name = document.getElementById('enquiry-name').value.trim();
+      const mobile = document.getElementById('enquiry-mobile').value.trim();
+      const email = document.getElementById('enquiry-email').value.trim();
+      const qualification = document.getElementById('enquiry-qualification').value.trim();
       const program = document.getElementById('enquiry-program').value;
       const joining = document.getElementById('enquiry-joining').value;
+      const message = document.getElementById('enquiry-message').value.trim();
 
-      document.getElementById('enquiry-summary-details').textContent =
-        `Applicant: ${name} • Program: ${program} • Preferred Joining: ${joining}. Our academic counseling team in Edappally, Kochi will reach out shortly.`;
+      const originalText = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = 'Sending...';
 
-      document.getElementById('contact-enquiry-form').classList.add('hidden');
-      document.getElementById('contact-enquiry-confirmation').classList.remove('hidden');
+      try {
+        await sendToEmail({
+          subject: `New Admission Enquiry: ${program} - ${name}`,
+          replyto: email,
+          name: name,
+          mobile: mobile,
+          email: email,
+          qualification: qualification,
+          program_of_interest: program,
+          preferred_joining: joining,
+          message: message || '(none)'
+        });
+
+        document.getElementById('enquiry-summary-details').textContent =
+          `Applicant: ${name} • Program: ${program} • Preferred Joining: ${joining}. Our academic counseling team in Edappally, Kochi will reach out shortly.`;
+
+        form.classList.add('hidden');
+        document.getElementById('contact-enquiry-confirmation').classList.remove('hidden');
+      } catch (err) {
+        console.error('Enquiry submission error:', err);
+        alert('Sorry, we could not send your enquiry. Please call 7994696001 or email tekbitlearn@gmail.com.');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = originalText;
+      }
     }
 
     function resetContactEnquiryForm() {
@@ -1766,17 +1823,52 @@
       document.getElementById('pb-settlement-fee').textContent = formatINR(prog.oneTimeSettlement);
     }
 
-    function handlePreBookSubmit(event) {
+    // ---- Pre-booking form: sends submission to your email via Web3Forms ----
+    async function handlePreBookSubmit(event) {
       event.preventDefault();
+      const form = document.getElementById('prebook-form');
+      const btn = form.querySelector('button[type="submit"]');
+
+      // Spam trap: real users never tick this hidden box
+      if (document.getElementById('pb-botcheck').checked) return;
+
       const name = document.getElementById('pb-name').value.trim();
+      const phone = document.getElementById('pb-phone').value.trim();
+      const email = document.getElementById('pb-email').value.trim();
       const selectedTitle = document.getElementById('prebook-program').value;
       const prog = programsData.find(p => p.tableTitle === selectedTitle) || programsData[0];
 
-      document.getElementById('pb-success-text').textContent =
-        `Thank you, ${name}. Your ₹200 pre-booking request for ${prog.tableTitle} (Pre-Booking Offer: ${formatINR(prog.preBookingFee)}, valid for six months) has been logged. Our admissions desk will contact you with the ₹200 payment link and receipt.`;
+      const originalText = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = 'Sending...';
 
-      document.getElementById('prebook-form').classList.add('hidden');
-      document.getElementById('prebook-success').classList.remove('hidden');
+      try {
+        await sendToEmail({
+          subject: `New ₹200 Pre-Booking: ${prog.tableTitle} - ${name}`,
+          replyto: email,
+          name: name,
+          mobile: phone,
+          email: email,
+          program: prog.tableTitle,
+          pre_booking_offer_fee: formatINR(prog.preBookingFee),
+          one_time_settlement_fee: formatINR(prog.oneTimeSettlement),
+          type: 'Pre-Booking Request (₹200)'
+        });
+
+        document.getElementById('pb-success-text').textContent =
+          `Thank you, ${name}. Your ₹200 pre-booking request for ${prog.tableTitle} (Pre-Booking Offer: ${formatINR(prog.preBookingFee)}, valid for six months) has been logged. Our admissions desk will contact you with the ₹200 payment link and receipt.`;
+
+        form.classList.add('hidden');
+        document.getElementById('prebook-success').classList.remove('hidden');
+        form.reset();
+        updatePreBookSummary();
+      } catch (err) {
+        console.error('Pre-booking submission error:', err);
+        alert('Sorry, we could not send your request. Please call 7994696001 or email tekbitlearn@gmail.com.');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = originalText;
+      }
     }
 
     function openPolicyModal(type) {
